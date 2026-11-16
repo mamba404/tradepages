@@ -9,8 +9,12 @@ let B = null, bAt = 0, bErr = null, nextPoll = 0;
 const COL = {scanner:'#64d2ff', analyst:'#ffd60a', brain:'#bf5af2', executor:'#00d35a', risk:'#ff6b9a'};
 let tab = 'home', range = 'LIVE', S = null, lastOk = null, failN = 0;
 const $ = s => document.querySelector(s), esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let inflight = null;
 async function bundle(force) {
   if (B && !force && Date.now() < nextPoll) return B;
+  if (inflight) return inflight;
+  inflight = _bundle().finally(() => { inflight = null; }); return inflight; }
+async function _bundle() {
   const r = await fetch(`https://api.github.com/repos/${REPO}/contents/d/${D}/state.json?ref=data`, {headers: {'Accept': 'application/vnd.github.raw'}, cache: 'no-store'});
   if (r.status === 403 || r.status === 429) { const reset = +r.headers.get('x-ratelimit-reset') || 0; nextPoll = Math.max(Date.now() + 60000, reset * 1000); throw new Error('rate limit'); }
   if (!r.ok) { nextPoll = Date.now() + 30000; throw new Error(r.status); }
@@ -51,7 +55,7 @@ async function home() {
    <div class="live" id="live"><img id="sa" alt=""><img id="sb" alt="" style="opacity:0"><div class="tl" id="ltl"><span class="dot"></span>…</div>
      <div class="tr" style="color:${COL[(lane.split(' ')[0]||'').toLowerCase()]||'#fff'}">${esc(lane)}</div></div>
    <div class="lastorder">${st.last_order ? esc(`${st.last_order.side==='buy'?'Bought':'Sold'} ${st.last_order.mint.slice(0,6)} · ${money(st.last_order.fill_usd||st.last_order.usd||0)} · PAPER · screen ${st.last_order.screen_ok?'✓':'–'} api – chain –`) : 'Waiting for the first trade'}</div>
-   ${st.fomo_session !== 'token in memory' ? '<div class="card" style="color:var(--o)">FOMO session: '+esc(st.fomo_session)+' — PAPER runs on public data (DexScreener fills).</div>' : ''}
+   ${!/^ok/.test(st.fomo_session||'') && st.fomo_session !== 'token in memory' ? '<div class="card" style="color:var(--o)">FOMO session: '+esc(st.fomo_session)+' — PAPER runs on public data.</div>' : ''}
    <h2>Bots · 5 running</h2><div class="carousel">${Object.entries(st.bots).map(([k,b])=>`<div class="card"><div class="bt" style="color:${COL[k]}">${k[0].toUpperCase()+k.slice(1)}</div><div class="bt">${esc(b.title)}</div><div class="bs">${esc(b.sub)}</div>${k==='risk'?`<div class="pills" style="margin-top:6px"><span class="pill red">stop -${esc(st.bots.risk.sub.match(/\d+/)[0])}%</span><span class="pill green">trail</span></div>`:''}</div>`).join('')}</div>
    <h2>Activity · <a href="#" onclick="go('activity');return false">See all</a></h2>${act.slice(0,5).map(actRow).join('') || '<div class="empty">Waiting for the first trade</div>'}
    ${st.positions.length?'<h2>Open positions</h2>'+st.positions.map(p=>`<div class="row"><div class="m"><div class="t">${esc(p.symbol||p.mint.slice(0,6))}</div><div class="s">${money(p.size_usd)} in · Executor</div></div><div class="v ${p.pnl_pct>=0?'green':'red'}">${p.pnl_pct.toFixed(1)}%<br><a href="${esc(p.link)}" target="_blank" rel="noopener">Open on FOMO</a></div></div>`).join(''):''}`;
