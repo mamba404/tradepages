@@ -102,7 +102,7 @@ async function home() {
    <div class="upd">son güncelleme ${st.data_ts ? hm(st.data_ts) + ' İST' + (ageS !== null ? ` · ${ageS < 120 ? ageS + 's' : Math.round(ageS / 60) + 'dk'} önce` : '') : '—'} · refresh ~${POLL_S}s</div>`;
   drawChart($('#cv'), ch.points || [], ch.start, ch.marks, s);
   document.querySelectorAll('.ranges button').forEach(b => b.onclick = () => { range = b.dataset.r; refresh(); });
-  $('#live').onclick = () => { const u = screenUrl(); if (!u) return; $('#fullimg').src = u; $('#full').classList.remove('hidden'); };
+  $('#live').onclick = () => { const vis = [$('#sa'), $('#sb')].find(i => i.src && i.style.opacity !== '0'); const u = vis ? vis.src : (D ? '' : screenUrl()); if (!u) return; $('#fullimg').src = u; $('#full').classList.remove('hidden'); };
   $('#share').onclick = async () => { const url = location.origin + location.pathname;   // private #d= path is not shared
     try { if (navigator.share) await navigator.share({title: 'Grok Terminal', url}); else { await navigator.clipboard.writeText(url); alert('Link copied'); } } catch (e) {} };
   lastSrc = ''; frame();
