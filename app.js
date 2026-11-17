@@ -97,6 +97,7 @@ async function home() {
        return `<div class="brow"><div class="bico" style="background:${COL[n]}">${n[0].toUpperCase()}</div><div class="bm"><div class="n">${cap(n)} <span style="color:var(--t2);font-weight:600;font-size:13px">· ${esc(b.title || '—')}</span></div><div class="s">${esc(b.sub || '—')}</div></div><span class="chip ${c}">${t}</span></div>`; }).join('')}
    </div>
    ${open ? `<div class="panel"><div class="ph"><b>Open positions</b><span>${open}</span></div>${st.positions.map(p => `<div class="arow"><div class="aico buy">B</div><div class="am"><div class="t">${esc(p.symbol || p.mint.slice(0, 6))}</div><div class="s">${money(p.size_usd)} in · ${esc(p.mode || 'PAPER')}</div></div><div class="av ${sgn(p.pnl_pct)}">${p.pnl_pct == null ? '—' : (p.pnl_pct >= 0 ? '+' : '') + p.pnl_pct.toFixed(1) + '%'}<a href="${esc(p.link)}" target="_blank" rel="noopener">FOMO ↗</a></div></div>`).join('')}</div>` : ''}
+   ${goldPanel(D && B ? B.gold : null)}
    <div class="panel"><div class="ph"><b>Activity</b><span>newest first · İST</span><a class="rt" href="#" onclick="go('activity');return false">See all</a></div>
      ${feed(act, dec, 8).map(actRow).join('') || '<div class="empty">No activity yet</div>'}</div>
    <div class="upd">son güncelleme ${st.data_ts ? hm(st.data_ts) + ' İST' + (ageS !== null ? ` · ${ageS < 120 ? ageS + 's' : Math.round(ageS / 60) + 'dk'} önce` : '') : '—'} · refresh ~${POLL_S}s</div>`;
@@ -107,6 +108,22 @@ async function home() {
     try { if (navigator.share) await navigator.share({title: 'Grok Terminal', url}); else { await navigator.clipboard.writeText(url); alert('Link copied'); } } catch (e) {} };
   lastSrc = ''; frame();
 }
+function goldPanel(g) {
+  if (!g) return '';
+  const f2 = v => v == null ? '—' : Number(v).toFixed(2), sg = v => v == null ? 'flat' : sgn(v);
+  const pm = v => v == null ? '—' : (v >= 0 ? '+' : '-') + '$' + Math.abs(v).toFixed(2);
+  const rows = (g.last_trades || []).slice(0, 6).map(t => `<div class="arow"><div class="aico ${t.pnl_usd >= 0 ? 'buy' : 'stop'}">${t.pnl_usd >= 0 ? '✓' : '✕'}</div>
+     <div class="am"><div class="t">${esc((t.reason_out || '—').toUpperCase())} · ${f2(t.entry)} → ${f2(t.exit)}</div><div class="s">PAPER·GOLD · fees $${f2(t.fee_usd)} · ${Math.round(t.hold_s || 0)}s · ${hm(t.closed_at)}</div></div>
+     <div class="av ${sg(t.pnl_usd)}">${pm(t.pnl_usd)}<span class="mono" style="display:block;font-size:10px;color:var(--t3)">0.02%: ${pm(t.pnl_alt_usd)}</span></div></div>`).join('');
+  const st = g.position ? `in position · entry ${f2(g.position.entry)} · uPnL ${pm(g.position.upnl)}` : (g.status || '—');
+  return `<div class="panel"><div class="ph"><b>Gold · PAXG</b><span>PAPER · ${esc(g.symbol || '—')}${g.stale ? ' · ' + esc(g.stale) : ''}</span><span class="rt mono" style="color:var(--t3);font-size:11px">${hm(g.ts)}</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px"><div style="font:800 30px -apple-system,'SF Pro Display'">$${f2(g.bid)}</div><span class="mono" style="color:var(--t2);font-size:12px">bid · ask ${f2(g.ask)}</span></div>
+    <div class="chg"><span>$${f2(g.equity)}</span><span class="${sg(g.pnl)}">${pm(g.pnl)}</span><span class="badge ${sg(g.pnl)}">${g.start_cash ? (g.equity / g.start_cash).toFixed(3) + 'x' : '—'}</span></div>
+    <div class="mono" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:11px;color:var(--t2);margin:6px 0 8px">
+      <div>trades<br><b style="color:#fff;font-size:14px">${g.trades ?? '—'}</b></div><div>win rate<br><b style="color:#fff;font-size:14px">${g.win_rate == null ? '—' : g.win_rate + '%'}</b></div>
+      <div>fees<br><b style="color:#fff;font-size:14px">$${f2(g.fees)}</b></div><div>at 0.02%<br><b class="${sg(g.pnl_alt)}" style="font-size:14px">${pm(g.pnl_alt)}</b></div></div>
+    <div class="mono" style="font-size:11px;color:var(--t2)">${esc(st)} · break-even ${g.breakeven_ticks ?? '—'} ticks</div>
+    ${rows}</div>`; }
 setInterval(() => { const c = document.getElementById('clk'); if (c) c.textContent = clock() + ' İST'; }, 10000);
 let flip = false;
 let lastSrc = '';
