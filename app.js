@@ -34,7 +34,9 @@ async function api(p, opt={}) {
   }
   const r = await fetch('api/' + p, Object.assign({headers: {'Authorization': 'Bearer ' + T, 'Content-Type': 'application/json'}}, opt));
   if (!r.ok) throw new Error(r.status); return r.json(); }
-const screenUrl = () => D ? (B && B.screen ? `https://raw.githubusercontent.com/${REPO}/data/d/${D}/${B.screen}` : '') : 'api/screen.jpg?t=' + encodeURIComponent(T) + '&_=' + Date.now();
+let scrTry = 0;
+const scrList = () => B ? [B.screen].concat((B.screens || []).filter(x => x !== B.screen)).filter(Boolean) : [];
+const screenUrl = () => D ? (scrList().length ? `https://raw.githubusercontent.com/${REPO}/data/d/${D}/${scrList()[scrTry % scrList().length]}` : '') : 'api/screen.jpg?t=' + encodeURIComponent(T) + '&_=' + Date.now();
 const fmtT = s => s ? s.slice(11, 19) : '—';
 function err(on) { const e = $('#err'); if (!on) { e.classList.add('hidden'); failN = 0; return; } failN++;
   e.textContent = `Desk offline · retrying · son güncelleme ${B ? fmtT(B.ts) : (lastOk ? lastOk.toLocaleTimeString() : '—')}`; e.classList.remove('hidden'); }
@@ -109,10 +111,10 @@ setInterval(() => { const c = document.getElementById('clk'); if (c) c.textConte
 let flip = false;
 let lastSrc = '';
 function frame() { const a = $('#sa'), b = $('#sb'); if (!a) return; const src = screenUrl(); if (!src || (D && src === lastSrc && a.src)) return; lastSrc = src; const next = flip ? a : b, cur = flip ? b : a;
-  const im = new Image(); im.onload = () => { next.src = im.src; next.style.opacity = 1; cur.style.opacity = 0; flip = !flip;
+  const im = new Image(); im.onload = () => { scrTry = 0; next.src = im.src; next.style.opacity = 1; cur.style.opacity = 0; flip = !flip;
     $('#ltl').textContent = S && S.screen === 'Paused · private' ? 'Paused · private' : ''; };
-  im.onerror = () => { lastSrc = ''; const a2 = $('#sa'), b2 = $('#sb');   // a just-published frame can lag on raw.githubusercontent: keep the last frame, retry
-    if (!(a2 && a2.src) && !(b2 && b2.src)) $('#ltl').textContent = 'Loading frame…'; setTimeout(frame, 20000); };
+  im.onerror = () => { lastSrc = ''; scrTry++; if (scrTry < scrList().length) { frame(); return; } const a2 = $('#sa'), b2 = $('#sb');   // a just-published frame can lag on raw.githubusercontent: keep the last frame, retry
+    if (!(a2 && a2.src) && !(b2 && b2.src)) $('#ltl').textContent = 'Loading frame…'; setTimeout(() => { scrTry = 0; frame(); }, 20000); };
   im.src = src; }
 async function bots() {
   const st = await api('state'); const names = Object.keys(st.bots);
