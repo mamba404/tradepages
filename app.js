@@ -38,38 +38,80 @@ const screenUrl = () => D ? (B && B.screen ? `https://raw.githubusercontent.com/
 const fmtT = s => s ? s.slice(11, 19) : '—';
 function err(on) { const e = $('#err'); if (!on) { e.classList.add('hidden'); failN = 0; return; } failN++;
   e.textContent = `Desk offline · retrying · son güncelleme ${B ? fmtT(B.ts) : (lastOk ? lastOk.toLocaleTimeString() : '—')}`; e.classList.remove('hidden'); }
-const money = v => (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2);
-function actRow(r) { const isTrade = r.kind !== 'rejected';
-  return `<div class="row"><div class="m"><div class="t">${esc(r.title)}</div><div class="s">${esc(r.subtitle)} · ${esc((r.ts||'').slice(11,16))}</div></div>
-  <div class="v ${r.kind==='stopped'?'red':(r.kind==='sold'?'green':'')}">${esc(r.value)}<br>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">Open on FOMO</a>` : ''}</div></div>`; }
+const money = v => (v == null || isNaN(v)) ? '—' : (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2);
+const sgn = v => v == null ? 'flat' : (v > 0.004 ? 'up' : (v < -0.004 ? 'down' : 'flat'));
+const hm = s => s ? s.slice(11, 16) : '—';      // desk timestamps are Istanbul local time
+const clock = () => new Intl.DateTimeFormat('tr-TR', {timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit'}).format(new Date());
+const BOTS = ['scanner','analyst','brain','executor','risk'];
+const cap = s => s[0].toUpperCase() + s.slice(1);
+function actRow(r) {
+  const k = r.kind, rej = k === 'rejected' || k === 'skipped';
+  const ico = k === 'bought' ? ['buy','B'] : k === 'sold' ? ['sell','S'] : k === 'stopped' ? ['stop','✕'] : ['rej','–'];
+  const v = String(r.value ?? ''); const neg = /^-/.test(v), pos = /^\+/.test(v);
+  const cls = rej ? '' : (k === 'sold' || k === 'stopped') ? (neg ? 'down' : (pos || k === 'sold' ? 'up' : '')) : '';
+  return `<div class="arow ${rej ? 'rej' : ''}"><div class="aico ${ico[0]}">${ico[1]}</div>
+   <div class="am"><div class="t">${esc(r.title)}${rej ? '<span class="skip">SKIPPED</span>' : ''}</div><div class="s">${esc(r.subtitle)} · ${hm(r.ts)}</div></div>
+   <div class="av ${cls}">${rej ? '' : esc(v || '—')}${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">FOMO ↗</a>` : ''}</div></div>`; }
+function feed(act, dec, n) {   // activity already carries trades and 'Rejected X' (Skipped) rows; newest first
+  return (act || []).slice().sort((a, b) => String(b.ts).localeCompare(String(a.ts)) || (b.id || 0) - (a.id || 0)).slice(0, n); }
+function chipFor(name, st, dec) {
+  const b = st.bots[name] || {}, d = (dec[name] || [])[0];
+  const fresh = b.heartbeat && (Date.now() - new Date(b.heartbeat).getTime() < 180000);
+  if (b.paused) return ['idle', 'paused']; if (!fresh) return ['fail', 'offline'];
+  if ((st.lane || '').toLowerCase().startsWith(name)) return ['chk', 'working'];
+  if (!d) return ['idle', 'idle'];
+  if (/pass|buy|done|ok|size/i.test(d.verdict)) return ['pass', 'passed'];
+  if (/kill|reject|skip|fail|drop/i.test(d.verdict)) return ['fail', 'rejected'];
+  return ['chk', 'checking']; }
 async function home() {
   const [st, ch, act] = await Promise.all([api('state'), api('chart?range=' + range), api('activity')]); S = st;
-  const pct = st.today_pct; const lane = st.lane || 'Idle';
+  let dec = {}; try { dec = D ? (B.decisions || {}) : Object.fromEntries(await Promise.all(BOTS.map(async n => [n, await api(`bots/${n}/decisions`)]))); } catch (e) {}
+  const base = st.night_start, bal = st.balance;
+  const dUsd = (bal != null && base) ? bal - base : null, dPct = dUsd != null ? dUsd / base * 100 : null, mult = (bal != null && base) ? bal / base : null;
+  const s = sgn(dUsd), lane = st.lane || 'Idle', busy = !/^idle/i.test(lane);
   const ageS = st.data_ts ? Math.round((Date.now() - new Date(st.data_ts).getTime()) / 1000) : null;
-  $('#view').innerHTML = `${st.mode==='PAPER'?'<div class="paperbar">PAPER · simulated money · no real trades</div>':''}
-   <div class="nav"><div class="av" onclick="go('account')"></div><div class="name">Grok Bot ›</div><div class="upd">son güncelleme ${st.data_ts ? fmtT(st.data_ts) + (ageS !== null ? ` · ${ageS < 120 ? ageS + 's' : Math.round(ageS/60) + 'dk'} önce` : '') : 'canlı'}</div></div>
-   <div class="bal">${money(st.balance)} ${st.mode==='PAPER'?'<span class="pill paper">PAPER</span>':''}</div>
-   <div class="sub"><span class="${pct>=0?'up':'down'}">${pct>=0?'+':''}${pct.toFixed(2)}%</span> today · <span class="pill mult">${st.multiplier.toFixed(2)}×</span> · cash ${money(st.cash)}</div>
-   <canvas class="chart" id="cv"></canvas>
-   <div class="ranges">${['LIVE','1H','4H','1D','1W','ALL'].map(r=>`<button class="${r===range?'on':''}" data-r="${r}">${r}</button>`).join('')}</div>
-   <div class="live" id="live"><img id="sa" alt=""><img id="sb" alt="" style="opacity:0"><div class="tl" id="ltl"><span class="dot"></span>…</div>
-     <div class="tr" style="color:${COL[(lane.split(' ')[0]||'').toLowerCase()]||'#fff'}">${esc(lane)}</div></div>
-   <div class="lastorder">${st.last_order ? esc(`${st.last_order.side==='buy'?'Bought':'Sold'} ${st.last_order.mint.slice(0,6)} · ${money(st.last_order.fill_usd||st.last_order.usd||0)} · PAPER · screen ${st.last_order.screen_ok?'✓':'–'} api – chain –`) : 'Waiting for the first trade'}</div>
-   ${!/^ok/.test(st.fomo_session||'') && st.fomo_session !== 'token in memory' ? '<div class="card" style="color:var(--o)">FOMO session: '+esc(st.fomo_session)+' — PAPER runs on public data.</div>' : ''}
-   <h2>Bots · 5 running</h2><div class="carousel">${Object.entries(st.bots).map(([k,b])=>`<div class="card"><div class="bt" style="color:${COL[k]}">${k[0].toUpperCase()+k.slice(1)}</div><div class="bt">${esc(b.title)}</div><div class="bs">${esc(b.sub)}</div>${k==='risk'?`<div class="pills" style="margin-top:6px"><span class="pill red">stop -${esc(st.bots.risk.sub.match(/\d+/)[0])}%</span><span class="pill green">trail</span></div>`:''}</div>`).join('')}</div>
-   <h2>Activity · <a href="#" onclick="go('activity');return false">See all</a></h2>${act.slice(0,5).map(actRow).join('') || '<div class="empty">Waiting for the first trade</div>'}
-   ${st.positions.length?'<h2>Open positions</h2>'+st.positions.map(p=>`<div class="row"><div class="m"><div class="t">${esc(p.symbol||p.mint.slice(0,6))}</div><div class="s">${money(p.size_usd)} in · Executor</div></div><div class="v ${p.pnl_pct>=0?'green':'red'}">${p.pnl_pct.toFixed(1)}%<br><a href="${esc(p.link)}" target="_blank" rel="noopener">Open on FOMO</a></div></div>`).join(''):''}`;
-  drawChart($('#cv'), ch.points, ch.start, ch.marks);
+  const live = ageS !== null && ageS < 300;
+  const lastTrade = (act || []).find(r => ['bought', 'sold', 'stopped'].includes(r.kind));
+  const open = (st.positions || []).length;
+  $('#view').innerHTML = `
+   <div class="hdr"><span class="back">‹</span><span class="ttl">Grok Terminal</span>${st.mode === 'PAPER' ? '<span class="paper">PAPER</span>' : ''}<button class="share" id="share">Share</button></div>
+   <div class="hsub"><span class="livep ${live ? '' : 'off'}"><i></i>${live ? 'Live' : 'Stale'}</span><span>fomo • ${open} open</span><span class="clock mono" id="clk">${clock()} İST</span></div>
+   ${st.mode === 'PAPER' ? '<div class="paperbar">PAPER · simulated money · no real trades</div>' : ''}
+   <div class="panel">
+     <div class="bal">${money(bal)}</div>
+     <div class="chg"><span class="${s}">${dUsd == null ? '—' : (dUsd >= 0 ? '+' : '-') + '$' + Math.abs(dUsd).toFixed(2)}</span><span class="${s}">${dPct == null ? '—' : (dPct >= 0 ? '+' : '') + dPct.toFixed(2) + '%'}</span><span class="badge ${s}">${mult == null ? '—' : mult.toFixed(2) + 'x'}</span><span class="mono" style="color:var(--t3);font-size:11px;margin-left:auto">vs ${money(base)} start</span></div>
+     <canvas class="chart" id="cv"></canvas>
+     <div class="ranges">${['LIVE','1H','4H','1D','1W','ALL'].map(r => `<button class="${r === range ? 'on' : ''}" data-r="${r}">${r}</button>`).join('')}</div>
+   </div>
+   <div class="panel"><div class="ph"><b>Live Screen</b><span>Bot's computer</span></div>
+     <div class="win"><div class="bar"><i></i><i></i><i></i><span class="mono">fomo.family · desk chrome</span></div>
+       <div class="live" id="live"><img id="sa" alt=""><img id="sb" alt="" style="opacity:0"><div class="none" id="ltl">${screenUrl() ? '' : 'No frame yet'}</div>
+       <div class="tr ${busy ? 'busy' : 'idle'}">${esc(busy ? lane : 'Executor · idle')}</div></div></div>
+     <div class="lastact">${lastTrade ? `<span class="ver">✓</span><span>${esc(lastTrade.title)} · ${esc(String(lastTrade.value || '').split(' · ')[0] || '—')}</span><span class="mono" style="color:var(--t3);font-size:11px;margin-left:auto">${hm(lastTrade.ts)}</span>` : '<span style="color:var(--t2)">No trade yet</span>'}</div>
+   </div>
+   ${!/^ok/.test(st.fomo_session || '') && st.fomo_session !== 'token in memory' ? `<div class="panel" style="color:var(--o);font-size:13px">FOMO session: ${esc(st.fomo_session || '—')} — PAPER runs on public data.</div>` : ''}
+   <div class="panel"><div class="ph"><b>Bots</b><span>${BOTS.filter(n => st.bots[n] && !st.bots[n].paused).length} running</span></div>
+     ${BOTS.map(n => { const b = st.bots[n] || {}; const [c, t] = chipFor(n, st, dec);
+       return `<div class="brow"><div class="bico" style="background:${COL[n]}">${n[0].toUpperCase()}</div><div class="bm"><div class="n">${cap(n)} <span style="color:var(--t2);font-weight:600;font-size:13px">· ${esc(b.title || '—')}</span></div><div class="s">${esc(b.sub || '—')}</div></div><span class="chip ${c}">${t}</span></div>`; }).join('')}
+   </div>
+   ${open ? `<div class="panel"><div class="ph"><b>Open positions</b><span>${open}</span></div>${st.positions.map(p => `<div class="arow"><div class="aico buy">B</div><div class="am"><div class="t">${esc(p.symbol || p.mint.slice(0, 6))}</div><div class="s">${money(p.size_usd)} in · ${esc(p.mode || 'PAPER')}</div></div><div class="av ${sgn(p.pnl_pct)}">${p.pnl_pct == null ? '—' : (p.pnl_pct >= 0 ? '+' : '') + p.pnl_pct.toFixed(1) + '%'}<a href="${esc(p.link)}" target="_blank" rel="noopener">FOMO ↗</a></div></div>`).join('')}</div>` : ''}
+   <div class="panel"><div class="ph"><b>Activity</b><span>newest first · İST</span><a class="rt" href="#" onclick="go('activity');return false">See all</a></div>
+     ${feed(act, dec, 8).map(actRow).join('') || '<div class="empty">No activity yet</div>'}</div>
+   <div class="upd">son güncelleme ${st.data_ts ? hm(st.data_ts) + ' İST' + (ageS !== null ? ` · ${ageS < 120 ? ageS + 's' : Math.round(ageS / 60) + 'dk'} önce` : '') : '—'} · refresh ~${POLL_S}s</div>`;
+  drawChart($('#cv'), ch.points || [], ch.start, ch.marks, s);
   document.querySelectorAll('.ranges button').forEach(b => b.onclick = () => { range = b.dataset.r; refresh(); });
-  $('#live').onclick = () => { $('#fullimg').src = screenUrl(); $('#full').classList.remove('hidden'); };
-  frame();
+  $('#live').onclick = () => { const u = screenUrl(); if (!u) return; $('#fullimg').src = u; $('#full').classList.remove('hidden'); };
+  $('#share').onclick = async () => { const url = location.origin + location.pathname;   // private #d= path is not shared
+    try { if (navigator.share) await navigator.share({title: 'Grok Terminal', url}); else { await navigator.clipboard.writeText(url); alert('Link copied'); } } catch (e) {} };
+  lastSrc = ''; frame();
 }
+setInterval(() => { const c = document.getElementById('clk'); if (c) c.textContent = clock() + ' İST'; }, 10000);
 let flip = false;
 let lastSrc = '';
 function frame() { const a = $('#sa'), b = $('#sb'); if (!a) return; const src = screenUrl(); if (!src || (D && src === lastSrc && a.src)) return; lastSrc = src; const next = flip ? a : b, cur = flip ? b : a;
   const im = new Image(); im.onload = () => { next.src = im.src; next.style.opacity = 1; cur.style.opacity = 0; flip = !flip;
-    $('#ltl').innerHTML = S && S.screen === 'Paused · private' ? '<span class="dot"></span>Paused · private' : '<span class="dot red"></span>Live · Bot\'s computer'; };
-  im.onerror = () => { $('#ltl').innerHTML = '<span class="dot"></span>Last frame —'; };
+    $('#ltl').textContent = S && S.screen === 'Paused · private' ? 'Paused · private' : ''; };
+  im.onerror = () => { $('#ltl').textContent = 'No frame'; };
   im.src = src; }
 async function bots() {
   const st = await api('state'); const names = Object.keys(st.bots);
@@ -80,7 +122,8 @@ async function bots() {
     ${dec[i].map(d=>`<div class="row"><div class="m"><div class="t">${esc(d.verdict)}</div><div class="s">${esc(d.reason)} · ${esc(d.ts.slice(11,19))}</div></div><div class="v">${d.link?`<a href="${esc(d.link)}" target="_blank" rel="noopener">${esc(d.mint.slice(0,6))}…</a>`:''}</div></div>`).join('') || '<div class="empty">No decisions yet</div>'}</div>`; }).join('');
   document.querySelectorAll('[data-p]').forEach(b => b.onclick = async () => { try { await api(`bots/${b.dataset.p}/${b.dataset.a}`, {method:'POST'}); } catch(e) { alert('Refused: ' + e.message); } bots(); });
 }
-async function activity() { const rows = await api('activity'); $('#view').innerHTML = '<h2>Activity</h2>' + (rows.map(actRow).join('') || '<div class="empty">Nothing yet tonight</div>'); }
+async function activity() { const rows = await api('activity'); let dec = {}; try { dec = D ? (B.decisions || {}) : {}; } catch (e) {}
+  $('#view').innerHTML = '<div class="hdr"><span class="back" onclick="go(\'home\')">‹</span><span class="ttl">Activity</span><span class="paper">PAPER</span></div><div class="panel">' + (feed(rows, dec, 200).map(actRow).join('') || '<div class="empty">Nothing yet tonight</div>') + '</div>'; }
 async function account() {
   const [a, s] = await Promise.all([api('account'), api('settings')]);
   const groups = {}; Object.entries(s).forEach(([k,v]) => { const [g,n] = k.split('.'); (groups[g] = groups[g] || []).push([k,n,v]); });
