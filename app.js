@@ -115,7 +115,10 @@ function frame() { const a = $('#sa'), b = $('#sb'); if (!a) return; const src =
     $('#ltl').textContent = S && S.screen === 'Paused · private' ? 'Paused · private' : ''; };
   im.onerror = () => { lastSrc = ''; scrTry++; if (scrTry < scrList().length) { frame(); return; } const a2 = $('#sa'), b2 = $('#sb');   // a just-published frame can lag on raw.githubusercontent: keep the last frame, retry
     if (!(a2 && a2.src) && !(b2 && b2.src)) $('#ltl').textContent = 'Loading frame…'; setTimeout(() => { scrTry = 0; frame(); }, 20000); };
-  im.src = src; }
+  if (D) {   // CORS fetch -> blob: Chromium's ORB blocks raw.githubusercontent images loaded as <img> from *.github.io
+    fetch(src, {mode: 'cors', cache: 'no-store'}).then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+      .then(bl => { if (im._u) URL.revokeObjectURL(im._u); im.src = URL.createObjectURL(bl); }).catch(() => im.onerror());
+  } else im.src = src; }
 async function bots() {
   const st = await api('state'); const names = Object.keys(st.bots);
   const dec = await Promise.all(names.map(n => api(`bots/${n}/decisions`)));
