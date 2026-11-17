@@ -111,7 +111,8 @@ let lastSrc = '';
 function frame() { const a = $('#sa'), b = $('#sb'); if (!a) return; const src = screenUrl(); if (!src || (D && src === lastSrc && a.src)) return; lastSrc = src; const next = flip ? a : b, cur = flip ? b : a;
   const im = new Image(); im.onload = () => { next.src = im.src; next.style.opacity = 1; cur.style.opacity = 0; flip = !flip;
     $('#ltl').textContent = S && S.screen === 'Paused · private' ? 'Paused · private' : ''; };
-  im.onerror = () => { $('#ltl').textContent = 'No frame'; };
+  im.onerror = () => { lastSrc = ''; const a2 = $('#sa'), b2 = $('#sb');   // a just-published frame can lag on raw.githubusercontent: keep the last frame, retry
+    if (!(a2 && a2.src) && !(b2 && b2.src)) $('#ltl').textContent = 'Loading frame…'; setTimeout(frame, 20000); };
   im.src = src; }
 async function bots() {
   const st = await api('state'); const names = Object.keys(st.bots);
